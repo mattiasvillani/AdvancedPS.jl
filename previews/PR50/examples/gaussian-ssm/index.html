@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Particle Gibbs with Ancestor Sampling · AdvancedPS</title><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.039/juliamono-regular.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.13.11/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../../">AdvancedPS</a></span></div><form class="docs-search" action="../../search/"><input class="docs-search-query" id="documenter-search-query" name="q" type="text" placeholder="Search docs"/></form><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><a class="tocitem" href="../../api/">API</a></li><li><span class="tocitem">Examples</span><ul><li><a class="tocitem" href="../../example/">Examples</a></li><li class="is-active"><a class="tocitem" href>Particle Gibbs with Ancestor Sampling</a></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Examples</a></li><li class="is-active"><a href>Particle Gibbs with Ancestor Sampling</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Particle Gibbs with Ancestor Sampling</a></li></ul></nav><div class="docs-right"><a class="docs-edit-link" href="https://github.com/TuringLang/AdvancedPS.jl/blob/master/docs/src/examples/gaussian-ssm.md" title="Edit on GitHub"><span class="docs-icon fab"></span><span class="docs-label is-hidden-touch">Edit on GitHub</span></a><a class="docs-settings-button fas fa-cog" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-sidebar-button fa fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a></div></header><article class="content" id="documenter-page"><h1 id="Particle-Gibbs-with-Ancestor-Sampling"><a class="docs-heading-anchor" href="#Particle-Gibbs-with-Ancestor-Sampling">Particle Gibbs with Ancestor Sampling</a><a id="Particle-Gibbs-with-Ancestor-Sampling-1"></a><a class="docs-heading-anchor-permalink" href="#Particle-Gibbs-with-Ancestor-Sampling" title="Permalink"></a></h1><pre><code class="language-julia hljs">using AdvancedPS
+using Random
+using Distributions
+using Plots</code></pre><p>We consider the following linear state-space model with Gaussian innovations. The latent state is a simple gaussian random walk and the observation is linear in the latent states, namely:</p>$<p>x<em>{t+1} = a x</em>{t} + \epsilon<em>t \quad \epsilon</em>t \sim \mathcal{N}(0,q^2) $ $  y<em>{t} = x</em>{t} + \nu_{t} \quad \nu \sim \mathcal{N}(0, r^2) $</p><p>Here we assume the static parameters <span>$\theta = (a, q^2, r^2)$</span> are known and we are only interested in sampling from the latent state <span>$x_t$</span>. To use particle gibbs with the ancestor sampling step we need to provide both the transition and observation densities. From the definition above we get: $  x<em>{t+1} \sim f</em>{\theta}(x<em>t|x</em>t) = \mathcal{N}(a x<em>t, q^2) $ $  y</em>t \sim g<em>{\theta}(x</em>t|x<em>t) = \mathcal{N}(a x</em>t, q^2) $ as well as the initial distribution <span>$f_0(x) = \mathcal{N}(0, q^2/(1-a^2))$</span>.</p><p>We are ready to use <code>AdvancedPS</code> with our model. We first need to define a model type that subtypes <code>AdvancedPS.AbstractStateSpaceModel</code>.</p><pre><code class="language-julia hljs">Parameters = @NamedTuple begin
+    a::Float64
+    q::Float64
+    r::Float64
+end
+
+mutable struct NonLinearTimeSeries &lt;: AdvancedPS.AbstractStateSpaceModel
+    X::Vector{Float64}
+    θ::Parameters
+    NonLinearTimeSeries(θ::Parameters) = new(Vector{Float64}(), θ)
+end</code></pre><p>and the densities defined above.</p><pre><code class="language-julia hljs">f(m::NonLinearTimeSeries, state, t) = Normal(m.θ.a * state, m.θ.q) # Transition density
+g(m::NonLinearTimeSeries, state, t) = Normal(state, m.θ.r)         # Observation density
+f₀(m::NonLinearTimeSeries) = Normal(0, m.θ.q^2 / (1 - m.θ.a^2))    # Initial state density</code></pre><p>To implement <code>AdvancedPS.AbstractStateSpaceModel</code> we need to define a few functions to define the dynamics of our system.</p><ul><li><code>AdvancedPS.initialization</code> the initial state density</li><li><code>AdvancedPS.transition</code> the state transition density</li><li><code>AdvancedPS.observation</code> the observation score given the observed data</li><li><code>AdvancedPS.isdone</code> signals the end of the execution for the model</li></ul><pre><code class="language-julia hljs">AdvancedPS.initialization(model::NonLinearTimeSeries) = f₀(model)
+AdvancedPS.transition(model::NonLinearTimeSeries, state, step) = f(model, state, step)
+function AdvancedPS.observation(model::NonLinearTimeSeries, state, step)
+    return logpdf(g(model, state, step), y[step])
+end
+AdvancedPS.isdone(::NonLinearTimeSeries, step) = step &gt; Tₘ</code></pre><p>Everything is now ready to simulate some data.</p><pre><code class="language-julia hljs">a = 0.9   # Scale
+q = 0.32  # State variance
+r = 1     # Observation variance
+Tₘ = 300  # Number of observation
+Nₚ = 50   # Number of particles
+Nₛ = 1000 # Number of samples
+seed = 9  # Reproduce everything
+
+θ₀ = Parameters((a, q, r))
+
+rng = Random.MersenneTwister(seed)
+
+x = zeros(Tₘ)
+y = zeros(Tₘ)
+
+reference = NonLinearTimeSeries(θ₀)
+x[1] = rand(rng, f₀(reference))
+for t in 1:Tₘ
+    if t &lt; Tₘ
+        x[t + 1] = rand(rng, f(reference, x[t], t))
+    end
+    y[t] = rand(rng, g(reference, x[t], t))
+end</code></pre><p>Let&#39;s have a look at the simulated data from the latent state dynamics</p><pre><code class="language-julia hljs">plot(x; label=&quot;x&quot;, color=:black)
+xlabel!(&quot;t&quot;)</code></pre><p><img src="../2276199451.svg" alt/></p><p>and the observation data</p><pre><code class="language-julia hljs">plot(y; label=&quot;y&quot;, color=:black)
+xlabel!(&quot;x&quot;)</code></pre><p><img src="../238390974.svg" alt/></p><pre><code class="language-julia hljs">model = NonLinearTimeSeries(θ₀)
+pgas = AdvancedPS.PGAS(Nₚ)
+chains = sample(rng, model, pgas, Nₛ, progress=false)</code></pre><p>The actual sampled trajectory is in the trajectory inner model</p><pre><code class="language-julia hljs">particles = hcat([chain.trajectory.model.X for chain in chains]...) # Concat all sampled states
+mean_trajectory = mean(particles; dims=2)</code></pre><pre><code class="language-julia hljs">scatter(particles; label=false, opacity=0.01, color=:black)
+plot!(x; color=:red, label=&quot;Original Trajectory&quot;)
+plot!(mean_trajectory; color=:orange, label=&quot;Mean trajectory&quot;, opacity=0.9)
+xlabel!(&quot;t&quot;)
+ylabel!(&quot;State&quot;)</code></pre><p><img src="../2123816815.svg" alt/></p><p>By sampling an ancestor from the reference particle in the particle gibbs sampler we</p><pre><code class="language-julia hljs">update_rate = sum(abs.(diff(particles; dims=2)) .&gt; 0; dims=2) / Nₛ
+plot(update_rate; label=false, ylim=[0, 1], legend=:bottomleft)
+hline!([1 - 1 / Nₚ]; label=&quot;N: $(Nₚ)&quot;)
+xlabel!(&quot;Iteration&quot;)
+ylabel!(&quot;Update rate&quot;)</code></pre><p><img src="../1894095327.svg" alt/></p><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../../example/">« Examples</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 0.27.15 on <span class="colophon-date" title="Tuesday 5 April 2022 21:12">Tuesday 5 April 2022</span>. Using Julia version 1.7.2.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
